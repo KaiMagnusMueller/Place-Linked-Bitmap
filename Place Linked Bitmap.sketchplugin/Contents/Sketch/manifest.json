@@ -26,13 +26,37 @@
       "name": "Update All Bitmaps",
       "script": "handlers.cocoascript",
       "shortcut": "control command u"
+    },
+    {
+      "handler": "PLB_select_folder",
+      "identifier": "PLB-selectfolder",
+      "name": "Change Folder",
+      "script": "handlers.cocoascript",
+      "shortcut": ""
+    },
+    {
+      "handler": "PLB_list_all_images",
+      "identifier": "PLB-listimages",
+      "name": "List all Images",
+      "script": "handlers.cocoascript",
+      "shortcut": ""
+    },
+    {
+      "handler": "PLB_set_image_path",
+      "identifier": "PLB-setimagepath",
+      "name": "Set Image Path",
+      "script": "handlers.cocoascript",
+      "shortcut": ""
     }
   ],
   "menu": {
     "items": [
       "PLB-placebitmapasnewlayer",
       "PLB-placebitmapasfill",
-      "PLB-updatebitmaps"
+      "PLB-updatebitmaps",
+      "PLB-selectfolder",
+      "PLB-listimages",
+      "PLB-setimagepath"
     ],
     "title": "Place Linked Bitmap"
   },

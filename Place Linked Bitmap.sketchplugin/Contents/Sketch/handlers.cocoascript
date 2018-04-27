@@ -1,6 +1,8 @@
 @import "PlaceLinkedBitmap.js"
 
 var PLB_layer_prefix = '@: ';
+var selectedFolderURL = ""
+//Hardcoded, Sketch debug reset fix
 
 var PLB_find_all_tagged_layers = function(context) {
   var doc = context.document;
@@ -20,11 +22,21 @@ var PLB_place_bitmap_as_new_layer = function(context) {
   var command = context.command;
 
   var page = [doc currentPage];
+  var layers = [page children];
   var selection = context.selection;
 
   if ([doc fileURL]) {
     var docDir = PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL],true);
     var group;
+
+    selectedFolderURL = PlaceLinkedBitmap.readUserDefaults("imgFy_projectPath")
+
+    if(selectedFolderURL == ""){
+      log("No common folder set. Searching...")
+      selectedFolderURL = PlaceLinkedBitmap.findSelectedFolder(context, layers, docDir)
+      //If No folder is currently selected and no previously placed image was found
+      //the plugin asks to set a new folder for the first image
+    }
 
     if ([selection count] > 0) {
       var sel = [selection objectAtIndex:0];
@@ -38,21 +50,31 @@ var PLB_place_bitmap_as_new_layer = function(context) {
     }
 
     var selectedBitmapURL = PlaceLinkedBitmap.openPanelMultiple(docDir,"Select a bitmap file to place…","Select","Place Bitmap");
-    if ([selectedBitmapURL count] > 0) {
+
+    if (selectedBitmapURL && [selectedBitmapURL count] > 0) {
       for (x = 0; x < [selectedBitmapURL count]; x++) {
+        var selectedURL = PlaceLinkedBitmap.getOnlySelectedFolder(selectedFolderURL)
         var thisBitmap = [selectedBitmapURL objectAtIndex:x];
-        var relativeURL = PlaceLinkedBitmap.getRelativeDir([thisBitmap absoluteString],docDir);
+        var relativeURL = PlaceLinkedBitmap.getCommonDir([thisBitmap absoluteString],docDir, selectedURL);
+
+        log("        relativeURL → " + relativeURL);
+        log("        layerName   → " + layerName);
+
+        log("        selectedURL → " + selectedURL);
+
+        // log("imageLayer:");
+        // log(imageLayer);
         var layerName = PlaceLinkedBitmap.makeLayerName(relativeURL,[[doc fileURL] absoluteString]);
         var imageLayer = PlaceLinkedBitmap.makeBitmapLayer(group,layerName,thisBitmap);
-        log("imageLayer:");
-        log(imageLayer);
+
         [command setValue:relativeURL forKey:"originalURL" onLayer:imageLayer];
-        log("originalURL → " + [command valueForKey:"originalURL" onLayer:imageLayer]);
+        [command setValue:selectedURL forKey:"selectedURL" onLayer:imageLayer];
+        // log("originalURL → " + [command valueForKey:"originalURL" onLayer:imageLayer]);
         [imageLayer select:true byExpandingSelection:false];
       }
     }
   } else {
-    PlaceLinkedBitmap.util.displayAlert("Place Linked Bitmap…","Please save your Sketch document before placing a bitmap.");
+    PlaceLinkedBitmap.util.displayAlert("Place Linked Bitmap…","Please save your Sketch document before placing a bitmap or set a project folder.");
   }
 };
 
@@ -62,10 +84,16 @@ var PLB_place_bitmap_as_fill = function(context) {
   var command = context.command;
 
   var page = [doc currentPage];
+  var layers = [page children];
   var selection = context.selection;
 
   if ([doc fileURL]) {
     var docDir = PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL],true);
+
+    if(selectedFolderURL == ""){
+      log("No common folder set. Searching...")
+      selectedFolderURL = PlaceLinkedBitmap.findSelectedFolder(context, layers, docDir)
+    }
 
     if ([selection count] > 0) {
       var validLayers = [];
@@ -78,11 +106,17 @@ var PLB_place_bitmap_as_fill = function(context) {
       if (validLayers.length > 0) {
         var selectedBitmapURL = PlaceLinkedBitmap.openPanel(docDir,"Select a bitmap file to place…","Select","Place Bitmap");
         if (selectedBitmapURL) {
-          var relativeURL = PlaceLinkedBitmap.getRelativeDir([selectedBitmapURL absoluteString],docDir);
+          var relativeURL = PlaceLinkedBitmap.getCommonDir([selectedBitmapURL absoluteString],docDir);
+          //Check if the placed image is placed along the same path as the project
+          if(!relativeURL){return}
+          var selectedURL = PlaceLinkedBitmap.getOnlySelectedFolder(selectedFolderURL)
           for (x = 0; x < validLayers.length; x++) {
             var fillLayer = PlaceLinkedBitmap.addFillToShapeLayer(context,validLayers[x],selectedBitmapURL);
+            log("        relativeURL → " + relativeURL);
+            log("        selectedURL → " + selectedURL);
             [command setValue:relativeURL forKey:"originalURL" onLayer:fillLayer];
-            log("originalURL → " + [command valueForKey:"originalURL" onLayer:fillLayer]);
+            [command setValue:selectedURL forKey:"selectedURL" onLayer:fillLayer];
+            // log("originalURL → " + [command valueForKey:"originalURL" onLayer:fillLayer]);
             [fillLayer select:true byExpandingSelection:false];
           }
         }
@@ -93,7 +127,7 @@ var PLB_place_bitmap_as_fill = function(context) {
       PlaceLinkedBitmap.util.displayAlert("Place Linked Bitmap…","Please select a shape layer to fill.");
     }
   } else {
-    PlaceLinkedBitmap.util.displayAlert("Place Linked Bitmap…","Please save your Sketch document before placing a bitmap.");
+    PlaceLinkedBitmap.util.displayAlert("Place Linked Bitmap…","Please save your Sketch document before placing a bitmap or set a project folder.");
   }
 };
 
@@ -101,6 +135,12 @@ var PLB_update_bitmaps = function(context) {
   var doc = context.document;
   var plugin = context.plugin;
   var command = context.command;
+
+  log("-------------------");
+  log([doc fileURL]);
+  log(PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL], false));
+  log(PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL], true));
+  log("-------------------");
 
   var page = [doc currentPage];
   var selection = context.selection;
@@ -115,8 +155,13 @@ var PLB_update_bitmaps = function(context) {
       var layer = validLayers[x];
       if ([command valueForKey:"originalURL" onLayer:layer]) {
         var taggedFileURL = [command valueForKey:"originalURL" onLayer:layer];
-        var fileURL = PlaceLinkedBitmap.expandRelativePath(taggedFileURL,docDir);
-        var fileDir = PlaceLinkedBitmap.getDirFromLocalURL(fileURL,false);
+        var taggedProjectFolder = [command valueForKey:"selectedURL" onLayer:layer];
+        log("taggedFileURL     " + taggedFileURL)
+        log("taggedProjectFolder " + taggedProjectFolder)
+        var fileURL = PlaceLinkedBitmap.expandCommonRelativePath(taggedFileURL,docDir,taggedProjectFolder);
+        //No effect here
+        //var fileDir = PlaceLinkedBitmap.getDirFromLocalURL(fileURL,false);
+        log(fileURL)
         var fileURLUnix = fileURL.toString().replace('file:///','/');
         fileURLUnix = PlaceLinkedBitmap.util.decodeString(fileURLUnix);
 
@@ -144,13 +189,13 @@ var PLB_update_bitmaps = function(context) {
             if (layerIsConstrained){
               layer.constrainProportions = true;
             }
-            log(fileURLUnix + " updated");
+            // log(fileURLUnix + " updated");
           } else if ([layer className] == "MSShapeGroup") {
             PlaceLinkedBitmap.updateShapeLayer(context,layer,fileURLUnix);
-            log(fileURLUnix + " updated");
+            // log(fileURLUnix + " updated");
           }
         } else {
-          log(fileURLUnix + " not found, skipping");
+          // log(fileURLUnix + " not found, skipping");
         }
       }
     }
@@ -166,3 +211,89 @@ var PLB_replace_bitmap = function(context) {
 
   log("PLB_replace_bitmap");
 };
+
+var PLB_select_folder = function(context) {
+  var doc = context.document;
+  var plugin = context.plugin;
+  var command = context.command;
+
+  if ([doc fileURL]) {
+    var docDir = PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL],true);
+    log(docDir);
+  } else {
+    PlaceLinkedBitmap.util.displayAlert("Select Folder…","Please save your Sketch document before setting a directory.");
+    return
+  }
+
+  var newSelectedFolderURL = PlaceLinkedBitmap.folderPanel(docDir,"Set search folder","Select Folder","AAAAAAA");
+  if(!newSelectedFolderURL){
+    return
+  } if (newSelectedFolderURL == selectedFolderURL) {
+    log("same folder selected")
+    return
+  }
+
+  selectedFolderURL = newSelectedFolderURL.toString()
+  // log("selectedDir: " + newSelectedFolderURL);
+
+  var page = [doc currentPage];
+  var layers = [page children];
+  var docDir = PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL],true);
+  var layerList = []
+  var layerSelectedURL = []
+  layerList = PlaceLinkedBitmap.findAllTaggedLayers(context,layers)
+
+  // log("        docDir    → " + docDir);
+  // log("        layerList → " + layerList);
+
+
+  for (var i = 0; i < layerList.length; i++) {
+    var taggedFilePath = [command valueForKey:"originalURL" onLayer:layerList[i]];
+    var taggedProjectFolder = [command valueForKey:"selectedURL" onLayer:layerList[i]];
+    var imgURL = PlaceLinkedBitmap.expandCommonRelativePath(taggedFilePath,docDir,taggedProjectFolder);
+
+    // log("        originalURL → " + taggedFileURL);
+    // log("        selectedURL → " + taggedSelectedURL);
+
+    var newRelativePath = PlaceLinkedBitmap.updateImgPath(context, layerList[i], taggedFilePath, docDir, newSelectedFolderURL, imgURL)
+    var newProjectFolder = PlaceLinkedBitmap.getOnlySelectedFolder(selectedFolderURL)
+    [command setValue:newRelativePath forKey:"originalURL" onLayer:layerList[i]];
+    [command setValue:newProjectFolder forKey:"selectedURL" onLayer:layerList[i]];
+
+
+
+    layerSelectedURL.push(imgURL);
+  }
+  // log(layerSelectedURL)
+  log("--------------------------------")
+}
+
+var PLB_set_image_path = function(context) {
+  //Was ist der Use Case?
+  //Sketchdatei und Bilder Separat?
+  //Oder bedes miteinander kopieren
+  var doc = context.document;
+
+  if ([doc fileURL]) {
+    var docDir = PlaceLinkedBitmap.getDirFromLocalURL([doc fileURL],true);
+  } else {
+    PlaceLinkedBitmap.util.displayAlert("Select Folder…","Please save your Sketch document before setting a directory.");
+    return
+  }
+
+  var newSelectedFolderURL = PlaceLinkedBitmap.folderPanel(docDir,"Set search folder","Select Folder","AAAAAAA");
+  if(!newSelectedFolderURL){
+    return
+  } if (newSelectedFolderURL == selectedFolderURL) {
+    log("same folder selected")
+    return
+  }
+
+  selectedFolderURL = newSelectedFolderURL.toString()
+
+  var key = "imgFy_projectPath"
+  PlaceLinkedBitmap.writeUserDefaults(selectedFolderURL, key)
+  var settingsValue = PlaceLinkedBitmap.readUserDefaults(key)
+  log(settingsValue)
+  log("Set image Folder")
+}
