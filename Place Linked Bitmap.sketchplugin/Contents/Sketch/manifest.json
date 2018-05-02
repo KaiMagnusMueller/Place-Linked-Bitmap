@@ -54,9 +54,7 @@
       "PLB-placebitmapasnewlayer",
       "PLB-placebitmapasfill",
       "PLB-updatebitmaps",
-      "PLB-selectfolder",
-      "PLB-listimages",
-      "PLB-setimagepath"
+      "PLB-selectfolder"
     ],
     "title": "Place Linked Bitmap"
   },
